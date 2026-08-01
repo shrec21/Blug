@@ -1,0 +1,27 @@
+{
+  "name": "blug",
+  "version": "0.1.0",
+  "description": "Agent-agnostic watcher that detects architecture-relevant code changes (schema, API surface, services, infra) and keeps a live Mermaid diagram in sync. Works standalone, or as an MCP server for Claude Code, Codex, and other MCP-compatible agents.",
+  "type": "module",
+  "bin": {
+    "blug": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "test:build": "tsc -p tsconfig.test.json",
+    "test": "npm run build && npm run test:build && node --test .tmp/test-dist/tests/*.test.js",
+    "watch:daemon": "tsc -p . && node dist/watcher.js",
+    "mcp": "tsc -p . && node dist/mcp-server.js"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "node-notifier": "^10.0.1",
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "@types/node": "^22.5.0",
+    "@types/node-notifier": "^8.0.5"
+  }
+}
