@@ -52,6 +52,9 @@ moment the file is saved, before any commit.
 └─────────────────┘
 ```
 
+If an architecture-relevant file is deleted, blug removes components that were
+previously attributed to that file and regenerates the diagram.
+
 Three ways to run it, pick what fits your workflow:
 
 | Mode | Command | When it fires | Works for |
@@ -67,6 +70,7 @@ Run more than one at once if you like — they share the same
 
 ```bash
 npm install
+npm test
 npm run build
 ```
 
@@ -77,12 +81,15 @@ cd your-repo
 node /path/to/blug/dist/watcher.js
 ```
 
-Leave it running in a terminal (or a tmux pane) while you work. First thing
-it'll want is a baseline — run this once per repo:
+Leave it running in a terminal (or a tmux pane) while you work. Seed the
+baseline once per repo:
 
 ```bash
 node /path/to/blug/dist/cli.js init
 ```
+
+This creates `.blug/model.json` and `ARCHITECTURE.md`. If no components are
+detected yet, `ARCHITECTURE.md` is still written with an empty-state diagram.
 
 ### Option B — MCP server (Codex, or Claude Code without hooks)
 
