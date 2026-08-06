@@ -32,3 +32,11 @@ test("cli check reports the actual changed architecture file", async () => {
   assert.match(stdout, /architecture change in migrations\/001\.sql/);
   assert.doesNotMatch(stdout, /architecture change in README\.md/);
 });
+
+test("cli help mentions watcher preview mode", async () => {
+  const root = await makeTempRepo("cli-help");
+
+  const { stdout } = await execFileAsync("node", [cliPath], { cwd: root, env: cliEnv });
+
+  assert.match(stdout, /blug watch --preview/);
+});

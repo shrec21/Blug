@@ -4,6 +4,7 @@ import { scanAndUpdate } from "./core.js";
 import { loadModel } from "./store.js";
 import { renderMermaid } from "./diagram.js";
 import { alertDrift } from "./notify.js";
+import { parseWatcherArgs, runWatcher } from "./watcher.js";
 import path from "path";
 
 const root = process.cwd();
@@ -28,6 +29,11 @@ async function main() {
     return;
   }
 
+  if (cmd === "watch") {
+    await runWatcher(root, parseWatcherArgs(rest));
+    return;
+  }
+
   if (cmd === "init") {
     const paths = await walkRepo(root);
     const reports = await scanAndUpdate(root, paths, { writeWhenNoDrift: true });
@@ -39,8 +45,11 @@ async function main() {
   blug init            seed baseline model from full repo scan
   blug check [files]   check given files (or whole repo) for architecture drift
   blug diagram         print current Mermaid diagram to stdout
+  blug watch           watch continuously for architecture drift
+  blug watch --preview watch and open a live architecture preview
 
 For continuous watching, run: npm run watch:daemon
+For live preview during development, run: npm run watch:daemon -- --preview
 For MCP integration (Codex, etc), run: npm run mcp`);
 }
 
