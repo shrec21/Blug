@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractComponents } from "../src/analyzer.js";
+import { extractArchitecture, extractComponents } from "../src/analyzer.js";
 import { stripVolatileComponentFields } from "./test-helpers.js";
 
 test("extracts SQL, Prisma, and EF schema components", () => {
@@ -85,4 +85,125 @@ test("extracts docker compose services, Dockerfile service, dependencies, and qu
 
 test("skips malformed package json without throwing", () => {
   assert.deepEqual(extractComponents("package.json", "deps", "{"), []);
+});
+
+test("extracts SQL table-level foreign key relationships", () => {
+  const extraction = extractArchitecture(
+    "migrations/001.sql",
+    "schema",
+    [
+      "CREATE TABLE Users (id int);",
+      "CREATE TABLE Orders (",
+      "  id int,",
+      "  user_id int,",
+      "  FOREIGN KEY (user_id) REFERENCES Users(id)",
+      ");",
+    ].join("\n")
+  );
+
+  assert.deepEqual(extraction.relationships, [
+    {
+      from: "table:Orders",
+      to: "table:Users",
+      label: "FK",
+      sourceFile: "migrations/001.sql",
+    },
+  ]);
+});
+
+test("extracts SQL inline reference relationships", () => {
+  const extraction = extractArchitecture(
+    "migrations/002.sql",
+    "schema",
+    "CREATE TABLE Orders (\n  user_id int REFERENCES Users(id)\n);"
+  );
+
+  assert.deepEqual(extraction.relationships, [
+    {
+      from: "table:Orders",
+      to: "table:Users",
+      label: "FK",
+      sourceFile: "migrations/002.sql",
+    },
+  ]);
+});
+
+test("extracts SQL alter table foreign key relationships", () => {
+  const extraction = extractArchitecture(
+    "migrations/003.sql",
+    "schema",
+    [
+      "ALTER TABLE Orders",
+      "ADD CONSTRAINT fk_orders_users",
+      "FOREIGN KEY (user_id) REFERENCES Users(id);",
+    ].join("\n")
+  );
+
+  assert.deepEqual(extraction.relationships, [
+    {
+      from: "table:Orders",
+      to: "table:Users",
+      label: "FK",
+      sourceFile: "migrations/003.sql",
+    },
+  ]);
+});
+
+test("extracts Prisma relation relationships", () => {
+  const extraction = extractArchitecture(
+    "prisma/schema.prisma",
+    "schema",
+    [
+      "model User {",
+      "  id String @id",
+      "}",
+      "",
+      "model Order {",
+      "  id String @id",
+      "  user User @relation(fields: [userId], references: [id])",
+      "}",
+    ].join("\n")
+  );
+
+  assert.deepEqual(extraction.relationships, [
+    {
+      from: "table:Order",
+      to: "table:User",
+      label: "relation",
+      sourceFile: "prisma/schema.prisma",
+    },
+  ]);
+});
+
+test("extracts EF Core simple navigation relationships only when both tables exist", () => {
+  const extraction = extractArchitecture(
+    "Data/Entities.cs",
+    "schema",
+    [
+      "public class User {",
+      "  public ICollection<Order> Orders { get; set; }",
+      "}",
+      "public class Order {",
+      "  public User User { get; set; }",
+      "  public Missing Missing { get; set; }",
+      "}",
+      "public DbSet<User> Users { get; set; }",
+      "public DbSet<Order> Orders { get; set; }",
+    ].join("\n")
+  );
+
+  assert.deepEqual(extraction.relationships, [
+    {
+      from: "table:Order",
+      to: "table:User",
+      label: "relation",
+      sourceFile: "Data/Entities.cs",
+    },
+    {
+      from: "table:User",
+      to: "table:Order",
+      label: "relation",
+      sourceFile: "Data/Entities.cs",
+    },
+  ]);
 });

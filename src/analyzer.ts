@@ -1,5 +1,5 @@
 import { ArchCategory } from "./classify.js";
-import { Component } from "./types.js";
+import { ArchitectureExtraction, Component, Relationship } from "./types.js";
 
 // Heuristic, regex-based extraction. Intentionally conservative: better to
 // miss a component than to hallucinate one. This is the layer you'd swap
@@ -10,6 +10,27 @@ function nowIso(): string {
 }
 
 export function extractComponents(
+  relPath: string,
+  category: ArchCategory,
+  content: string
+): Component[] {
+  return extractArchitecture(relPath, category, content).components;
+}
+
+export function extractArchitecture(
+  relPath: string,
+  category: ArchCategory,
+  content: string
+): ArchitectureExtraction {
+  const components = extractComponentsOnly(relPath, category, content);
+  const relationships = category === "schema" ? extractSchemaRelationships(relPath, content) : [];
+  return {
+    components,
+    relationships,
+  };
+}
+
+function extractComponentsOnly(
   relPath: string,
   category: ArchCategory,
   content: string
@@ -28,6 +49,146 @@ export function extractComponents(
     default:
       return [];
   }
+}
+
+function tableId(name: string): string {
+  return `table:${name}`;
+}
+
+function normalizeSqlIdentifier(identifier: string): string {
+  const parts = identifier
+    .split(".")
+    .map((part) => part.trim().replace(/^\[|\]$/g, "").replace(/^"|"$/g, ""));
+  return parts[parts.length - 1] ?? identifier;
+}
+
+function relationshipKey(relationship: Relationship): string {
+  return [
+    relationship.from,
+    relationship.to,
+    relationship.label ?? "",
+    relationship.sourceFile,
+  ].join("\0");
+}
+
+function dedupeRelationships(relationships: Relationship[]): Relationship[] {
+  const out: Relationship[] = [];
+  const seen = new Set<string>();
+  for (const relationship of relationships) {
+    const key = relationshipKey(relationship);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(relationship);
+  }
+  return out.sort((a, b) => relationshipKey(a).localeCompare(relationshipKey(b)));
+}
+
+function extractSchemaRelationships(relPath: string, content: string): Relationship[] {
+  return dedupeRelationships([
+    ...extractSqlRelationships(relPath, content),
+    ...extractPrismaRelationships(relPath, content),
+    ...extractEfRelationships(relPath, content),
+  ]);
+}
+
+function extractSqlRelationships(relPath: string, content: string): Relationship[] {
+  const relationships: Relationship[] = [];
+  const sqlIdentifier = String.raw`(?:(?:\[?[A-Za-z_][\w]*\]?|"[A-Za-z_][\w]*")\.)?(?:\[?[A-Za-z_][\w]*\]?|"[A-Za-z_][\w]*")`;
+  const createTable = new RegExp(
+    String.raw`\bCREATE\s+TABLE\s+(${sqlIdentifier})\s*\(([\s\S]*?)\)\s*;`,
+    "gi"
+  );
+  const alterTable = new RegExp(
+    String.raw`\bALTER\s+TABLE\s+(${sqlIdentifier})([\s\S]*?)(?=;\s*|\bALTER\s+TABLE\b|\bCREATE\s+TABLE\b|$)`,
+    "gi"
+  );
+  const references = new RegExp(String.raw`\bREFERENCES\s+(${sqlIdentifier})\s*\(`, "gi");
+
+  function collect(sourceTable: string, statement: string) {
+    let match: RegExpExecArray | null;
+    while ((match = references.exec(statement))) {
+      relationships.push({
+        from: tableId(sourceTable),
+        to: tableId(normalizeSqlIdentifier(match[1])),
+        label: "FK",
+        sourceFile: relPath,
+      });
+    }
+  }
+
+  let match: RegExpExecArray | null;
+  while ((match = createTable.exec(content))) {
+    collect(normalizeSqlIdentifier(match[1]), match[2]);
+  }
+  while ((match = alterTable.exec(content))) {
+    collect(normalizeSqlIdentifier(match[1]), match[2]);
+  }
+
+  return relationships;
+}
+
+function extractPrismaRelationships(relPath: string, content: string): Relationship[] {
+  const relationships: Relationship[] = [];
+  const scalarTypes = new Set([
+    "String",
+    "Boolean",
+    "Int",
+    "BigInt",
+    "Float",
+    "Decimal",
+    "DateTime",
+    "Json",
+    "Bytes",
+  ]);
+  const modelBlock = /model\s+(\w+)\s*\{([\s\S]*?)\}/g;
+  let modelMatch: RegExpExecArray | null;
+  while ((modelMatch = modelBlock.exec(content))) {
+    const source = modelMatch[1];
+    const body = modelMatch[2];
+    for (const line of body.split(/\r?\n/)) {
+      const field = line.trim().match(/^(\w+)\s+([A-Z]\w*)(?:\[\])?(?:\?)?\s+.*@relation\b/);
+      if (!field) continue;
+      const target = field[2];
+      if (scalarTypes.has(target)) continue;
+      relationships.push({
+        from: tableId(source),
+        to: tableId(target),
+        label: "relation",
+        sourceFile: relPath,
+      });
+    }
+  }
+  return relationships;
+}
+
+function extractEfRelationships(relPath: string, content: string): Relationship[] {
+  const tableNames = new Set<string>();
+  const dbSet = /DbSet<(\w+)>/g;
+  let match: RegExpExecArray | null;
+  while ((match = dbSet.exec(content))) {
+    tableNames.add(match[1]);
+  }
+
+  const relationships: Relationship[] = [];
+  const classBlock = /class\s+(\w+)[^{]*\{([\s\S]*?)(?=\n\s*(?:public\s+)?class\s+\w+|\n\s*public\s+DbSet<|$)/g;
+  let classMatch: RegExpExecArray | null;
+  while ((classMatch = classBlock.exec(content))) {
+    const source = classMatch[1];
+    if (!tableNames.has(source)) continue;
+    const body = classMatch[2];
+    const navigation = /public\s+(?:virtual\s+)?(?:(?:ICollection|List|HashSet)<(\w+)>|(\w+))\s+\w+\s*\{\s*get;\s*set;\s*\}/g;
+    while ((match = navigation.exec(body))) {
+      const target = match[1] ?? match[2];
+      if (!target || target === source || !tableNames.has(target)) continue;
+      relationships.push({
+        from: tableId(source),
+        to: tableId(target),
+        label: "relation",
+        sourceFile: relPath,
+      });
+    }
+  }
+  return relationships;
 }
 
 function extractSchema(relPath: string, content: string): Component[] {
