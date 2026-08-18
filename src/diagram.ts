@@ -9,7 +9,17 @@ const GROUP_LABEL: Record<ComponentKind, string> = {
   job: "Jobs",
 };
 
-const KIND_ORDER: ComponentKind[] = ["table", "endpoint", "service", "dependency", "queue", "job"];
+// Layered order: deployment → interface → async → data → background → external
+const KIND_ORDER: ComponentKind[] = ["service", "endpoint", "queue", "table", "job", "dependency"];
+
+const SUBGRAPH_STYLE: Record<ComponentKind, string> = {
+  service: "fill:#e8f5e9,stroke:#388e3c",
+  endpoint: "fill:#e3f2fd,stroke:#1976d2",
+  table: "fill:#fce4ec,stroke:#c62828",
+  queue: "fill:#fff3e0,stroke:#e65100",
+  dependency: "fill:#f3e5f5,stroke:#7b1fa2",
+  job: "fill:#e0f7fa,stroke:#00838f",
+};
 
 function sanitizeId(id: string): string {
   return id.replace(/[^a-zA-Z0-9_]/g, "_");
@@ -30,11 +40,13 @@ export function renderMermaid(model: ArchitectureModel): string {
     byKind.get(c.kind)!.push(c);
   }
 
-  const lines: string[] = ["flowchart LR"];
+  const lines: string[] = ["flowchart TB"];
+  const renderedKinds: ComponentKind[] = [];
 
   for (const kind of KIND_ORDER) {
     const comps = byKind.get(kind) ?? [];
     if (comps.length === 0) continue;
+    renderedKinds.push(kind);
     lines.push(`  subgraph ${sanitizeId(kind)}["${GROUP_LABEL[kind]}"]`);
     for (const c of comps.sort((a, b) => a.name.localeCompare(b.name))) {
       lines.push(`    ${sanitizeId(c.id)}["${escapeLabel(c.name)}"]`);
@@ -42,7 +54,12 @@ export function renderMermaid(model: ArchitectureModel): string {
     lines.push("  end");
   }
 
-  const relationships = [...model.relationships].sort((a, b) => {
+  // Filter out relationships where either side doesn't exist as a component
+  const validRelationships = model.relationships.filter(
+    (rel) => model.components[rel.from] && model.components[rel.to]
+  );
+
+  const relationships = [...validRelationships].sort((a, b) => {
     const aKey = `${a.from}\0${a.to}\0${a.label ?? ""}`;
     const bKey = `${b.from}\0${b.to}\0${b.label ?? ""}`;
     return aKey.localeCompare(bKey);
@@ -50,6 +67,11 @@ export function renderMermaid(model: ArchitectureModel): string {
   for (const rel of relationships) {
     const label = rel.label ? `|${escapeLabel(rel.label)}|` : "";
     lines.push(`  ${sanitizeId(rel.from)} -->${label} ${sanitizeId(rel.to)}`);
+  }
+
+  // Subgraph color styles
+  for (const kind of renderedKinds) {
+    lines.push(`  style ${sanitizeId(kind)} ${SUBGRAPH_STYLE[kind]}`);
   }
 
   return lines.join("\n");

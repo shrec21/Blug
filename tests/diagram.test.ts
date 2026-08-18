@@ -31,35 +31,68 @@ const model: ArchitectureModel = {
     },
   },
   relationships: [
-    { from: "table:Orders", to: "dependency:@scope/pkg", label: "owned by" },
-    { from: "endpoint:GET /orders", to: "table:Orders", label: "reads \"latest\"" },
+    { from: "table:Orders", to: "dependency:@scope/pkg", label: "owned by", sourceFile: "schema.sql" },
+    { from: "endpoint:GET /orders", to: "table:Orders", label: "reads \"latest\"", sourceFile: "routes/orders.ts" },
   ],
 };
 
-test("renderMermaid emits deterministic groups, relationships, and escaped labels", () => {
-  assert.equal(
-    renderMermaid(model),
-    [
-      "flowchart LR",
-      "  subgraph table[\"Database\"]",
-      "    table_Orders[\"Orders\"]",
-      "  end",
-      "  subgraph endpoint[\"API\"]",
-      "    endpoint_GET__orders[\"GET /orders\"]",
-      "  end",
-      "  subgraph dependency[\"Dependencies\"]",
-      "    dependency__scope_pkg[\"@scope/pkg \\\"quoted\\\"\"]",
-      "  end",
-      "  endpoint_GET__orders -->|reads \\\"latest\\\"| table_Orders",
-      "  table_Orders -->|owned by| dependency__scope_pkg",
-    ].join("\n")
-  );
+test("renderMermaid emits layered TB layout with styled subgraphs", () => {
+  const mermaid = renderMermaid(model);
+
+  // TB direction
+  assert.match(mermaid, /^flowchart TB$/m);
+
+  // Layered order: endpoint before table before dependency
+  const endpointIdx = mermaid.indexOf("subgraph endpoint");
+  const tableIdx = mermaid.indexOf("subgraph table");
+  const depIdx = mermaid.indexOf("subgraph dependency");
+  assert.ok(endpointIdx < tableIdx, "endpoint subgraph should come before table");
+  assert.ok(tableIdx < depIdx, "table subgraph should come before dependency");
+
+  // Style directives present
+  assert.match(mermaid, /style endpoint fill:/);
+  assert.match(mermaid, /style table fill:/);
+  assert.match(mermaid, /style dependency fill:/);
+});
+
+test("renderMermaid renders relationships and escaped labels", () => {
+  const mermaid = renderMermaid(model);
+
+  assert.match(mermaid, /endpoint_GET__orders -->\|reads \\"latest\\"\| table_Orders/);
+  assert.match(mermaid, /table_Orders -->\|owned by\| dependency__scope_pkg/);
+});
+
+test("renderMermaid filters out relationships with dangling component references", () => {
+  const modelWithDangling: ArchitectureModel = {
+    version: 1,
+    updatedAt: "2026-08-01T00:00:00.000Z",
+    components: {
+      "endpoint:GET /orders": {
+        id: "endpoint:GET /orders",
+        kind: "endpoint",
+        name: "GET /orders",
+        sourceFile: "routes/orders.ts",
+        lastChanged: "2026-08-01T00:00:00.000Z",
+      },
+    },
+    relationships: [
+      // Valid: from exists (but to doesn't — should be filtered)
+      { from: "endpoint:GET /orders", to: "table:Missing", label: "queries", sourceFile: "routes/orders.ts" },
+      // Invalid: neither side exists
+      { from: "service:ghost", to: "endpoint:POST /x", label: "exposes", sourceFile: "docker-compose.yml" },
+    ],
+  };
+
+  const mermaid = renderMermaid(modelWithDangling);
+  assert.ok(!mermaid.includes("table_Missing"), "dangling 'to' should be filtered");
+  assert.ok(!mermaid.includes("service_ghost"), "dangling 'from' should be filtered");
+  assert.ok(!mermaid.includes("-->"), "no relationship arrows should appear");
 });
 
 test("renderMarkdown includes deterministic summary and empty-state text", () => {
   assert.match(
     renderMarkdown(model),
-    /- Database: 1\n- API: 1\n- Dependencies: 1/
+    /- API: 1\n- Database: 1\n- Dependencies: 1/
   );
 
   const empty: ArchitectureModel = {
@@ -69,5 +102,5 @@ test("renderMarkdown includes deterministic summary and empty-state text", () =>
     relationships: [],
   };
   assert.match(renderMarkdown(empty), /_No components detected yet\._/);
-  assert.match(renderMarkdown(empty), /```mermaid\nflowchart LR\n```/);
+  assert.match(renderMarkdown(empty), /```mermaid\nflowchart TB\n```/);
 });
