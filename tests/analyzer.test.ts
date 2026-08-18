@@ -175,6 +175,76 @@ test("extracts Prisma relation relationships", () => {
   ]);
 });
 
+test("extracts docker-compose depends_on relationships (short syntax)", () => {
+  const extraction = extractArchitecture(
+    "docker-compose.yml",
+    "infra",
+    [
+      "services:",
+      "  api:",
+      "    build: .",
+      "    depends_on:",
+      "      - db",
+      "      - redis",
+      "  db:",
+      "    image: postgres",
+      "  redis:",
+      "    image: redis",
+    ].join("\n")
+  );
+
+  assert.deepEqual(extraction.relationships, [
+    {
+      from: "service:api",
+      to: "service:db",
+      label: "depends_on",
+      sourceFile: "docker-compose.yml",
+    },
+    {
+      from: "service:api",
+      to: "service:redis",
+      label: "depends_on",
+      sourceFile: "docker-compose.yml",
+    },
+  ]);
+});
+
+test("extracts docker-compose depends_on relationships (long syntax with condition)", () => {
+  const extraction = extractArchitecture(
+    "docker-compose.yaml",
+    "infra",
+    [
+      "services:",
+      "  api:",
+      "    build: .",
+      "    depends_on:",
+      "      db:",
+      "        condition: service_healthy",
+      "  db:",
+      "    image: postgres",
+    ].join("\n")
+  );
+
+  assert.deepEqual(extraction.relationships, [
+    {
+      from: "service:api",
+      to: "service:db",
+      label: "depends_on",
+      sourceFile: "docker-compose.yaml",
+    },
+  ]);
+});
+
+test("extracts no depends_on relationships from non-docker-compose infra files", () => {
+  const extraction = extractArchitecture(
+    "services/billing/Dockerfile",
+    "infra",
+    "FROM node:22"
+  );
+
+  assert.deepEqual(extraction.relationships, []);
+});
+
 test("extracts EF Core simple navigation relationships only when both tables exist", () => {
   const extraction = extractArchitecture(
     "Data/Entities.cs",
