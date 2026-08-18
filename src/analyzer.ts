@@ -23,7 +23,12 @@ export function extractArchitecture(
   content: string
 ): ArchitectureExtraction {
   const components = extractComponentsOnly(relPath, category, content);
-  const relationships = category === "schema" ? extractSchemaRelationships(relPath, content) : [];
+  let relationships: Relationship[] = [];
+  if (category === "schema") {
+    relationships = extractSchemaRelationships(relPath, content);
+  } else if (category === "infra") {
+    relationships = extractInfraRelationships(relPath, content);
+  }
   return {
     components,
     relationships,
@@ -89,6 +94,90 @@ function extractSchemaRelationships(relPath: string, content: string): Relations
     ...extractPrismaRelationships(relPath, content),
     ...extractEfRelationships(relPath, content),
   ]);
+}
+
+function extractInfraRelationships(relPath: string, content: string): Relationship[] {
+  if (/docker-compose/i.test(relPath)) {
+    return dedupeRelationships(extractDockerComposeRelationships(relPath, content));
+  }
+  return [];
+}
+
+function extractDockerComposeRelationships(relPath: string, content: string): Relationship[] {
+  const relationships: Relationship[] = [];
+  const lines = content.split("\n");
+
+  let currentService: string | null = null;
+  let inDependsOn = false;
+  let dependsOnIndent = 0;
+
+  for (const line of lines) {
+    // Top-level service definition: exactly 2-space indent, word followed by colon
+    const svc = line.match(/^  (\w[\w-]*):\s*$/);
+    if (svc) {
+      currentService = svc[1];
+      inDependsOn = false;
+      continue;
+    }
+
+    // Left the services block entirely
+    if (/^\S/.test(line) && !/^services:/.test(line)) {
+      currentService = null;
+      inDependsOn = false;
+      continue;
+    }
+
+    if (!currentService) continue;
+
+    // depends_on key under a service (4-space indent)
+    if (/^    depends_on:\s*$/.test(line)) {
+      inDependsOn = true;
+      dependsOnIndent = 4;
+      continue;
+    }
+
+    if (inDependsOn) {
+      // Short syntax: "      - serviceName"
+      const short = line.match(/^\s+-\s+(\w[\w-]*)\s*$/);
+      if (short) {
+        relationships.push({
+          from: `service:${currentService}`,
+          to: `service:${short[1]}`,
+          label: "depends_on",
+          sourceFile: relPath,
+        });
+        continue;
+      }
+
+      // Long syntax: "      serviceName:" (more indented than depends_on)
+      const long = line.match(/^(\s+)(\w[\w-]*):\s*$/);
+      if (long && long[1].length > dependsOnIndent) {
+        relationships.push({
+          from: `service:${currentService}`,
+          to: `service:${long[2]}`,
+          label: "depends_on",
+          sourceFile: relPath,
+        });
+        continue;
+      }
+
+      // Sub-property of long syntax entry (e.g. "condition: service_healthy")
+      const subProp = line.match(/^(\s+)\w+:/);
+      if (subProp && subProp[1].length > dependsOnIndent + 2) {
+        continue;
+      }
+
+      // Any other line at or below depends_on indent level: left the block
+      if (/^\s*\S/.test(line)) {
+        const indent = line.match(/^(\s*)/)![1].length;
+        if (indent <= dependsOnIndent) {
+          inDependsOn = false;
+        }
+      }
+    }
+  }
+
+  return relationships;
 }
 
 function extractSqlRelationships(relPath: string, content: string): Relationship[] {
