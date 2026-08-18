@@ -28,6 +28,8 @@ export function extractArchitecture(
     relationships = extractSchemaRelationships(relPath, content);
   } else if (category === "infra") {
     relationships = extractInfraRelationships(relPath, content);
+  } else if (category === "api") {
+    relationships = extractApiRelationships(relPath, content, components);
   }
   return {
     components,
@@ -178,6 +180,82 @@ function extractDockerComposeRelationships(relPath: string, content: string): Re
   }
 
   return relationships;
+}
+
+function extractApiRelationships(
+  relPath: string,
+  content: string,
+  endpoints: Component[]
+): Relationship[] {
+  if (endpoints.length === 0) return [];
+
+  const tableRefs = new Set<string>();
+  const queuePublishes = new Set<string>();
+  const queueSubscribes = new Set<string>();
+
+  // SQL keywords (case-insensitive) followed by a capitalized identifier.
+  // Filter out ES module imports: "import ... from 'module'" by requiring
+  // uppercase first letter on the table name, which import sources never have.
+  const sqlKeywords = /\b(?:FROM|JOIN|INTO|UPDATE)\s+([A-Z][A-Za-z0-9_]*)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = sqlKeywords.exec(content))) {
+    tableRefs.add(m[1]);
+  }
+
+  // Prisma ORM: prisma.modelName.method() — model name is camelCase in client
+  const prisma = /\bprisma\.([a-z][a-zA-Z0-9]*)\.\w+\s*\(/g;
+  while ((m = prisma.exec(content))) {
+    tableRefs.add(m[1][0].toUpperCase() + m[1].slice(1));
+  }
+
+  // Class-method ORM patterns (Sequelize findAll/create, Django .objects, etc.)
+  const classOrm =
+    /\b([A-Z][a-zA-Z0-9]+)\.(?:findAll|findOne|findMany|findFirst|findByPk|create|update|destroy|bulkCreate|count|aggregate|objects\.)\s*\(?/g;
+  while ((m = classOrm.exec(content))) {
+    tableRefs.add(m[1]);
+  }
+
+  // Queue publish/emit/send
+  const pub = /\b(?:publish|emit|send|enqueue)\s*\(\s*["']([^"']+)["']/gi;
+  while ((m = pub.exec(content))) {
+    queuePublishes.add(m[1]);
+  }
+
+  // Queue subscribe/consume
+  const sub = /\b(?:subscribe|on|listen|consume)\s*\(\s*["']([^"']+)["']/gi;
+  while ((m = sub.exec(content))) {
+    queueSubscribes.add(m[1]);
+  }
+
+  const relationships: Relationship[] = [];
+  for (const ep of endpoints) {
+    for (const table of tableRefs) {
+      relationships.push({
+        from: ep.id,
+        to: `table:${table}`,
+        label: "queries",
+        sourceFile: relPath,
+      });
+    }
+    for (const queue of queuePublishes) {
+      relationships.push({
+        from: ep.id,
+        to: `queue:${queue}`,
+        label: "publishes",
+        sourceFile: relPath,
+      });
+    }
+    for (const queue of queueSubscribes) {
+      relationships.push({
+        from: ep.id,
+        to: `queue:${queue}`,
+        label: "subscribes",
+        sourceFile: relPath,
+      });
+    }
+  }
+
+  return dedupeRelationships(relationships);
 }
 
 function extractSqlRelationships(relPath: string, content: string): Relationship[] {
@@ -382,18 +460,30 @@ function extractInfra(relPath: string, content: string): Component[] {
     const serviceBlock = content.match(/services:\n([\s\S]*)/);
     if (serviceBlock) {
       const lines = serviceBlock[1].split("\n");
+      let currentSvc: Component | null = null;
       for (const line of lines) {
         const svc = line.match(/^  (\w[\w-]*):\s*$/);
         if (svc) {
-          out.push({
+          currentSvc = {
             id: `service:${svc[1]}`,
             kind: "service",
             name: svc[1],
             sourceFile: relPath,
             lastChanged: nowIso(),
-          });
+          };
+          out.push(currentSvc);
         } else if (/^\S/.test(line)) {
           break; // left the services: block
+        } else if (currentSvc) {
+          // Capture build context or image as detail
+          const build = line.match(/^\s+build:\s+(.+)$/);
+          if (build) {
+            currentSvc.detail = `build: ${build[1].trim()}`;
+          }
+          const image = line.match(/^\s+image:\s+(.+)$/);
+          if (image) {
+            currentSvc.detail = `image: ${image[1].trim()}`;
+          }
         }
       }
     }

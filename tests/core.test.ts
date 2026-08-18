@@ -47,3 +47,107 @@ test("scanAndUpdate rejects paths outside the scanned root", async () => {
     /outside repository root/
   );
 });
+
+test("scanAndUpdate writes architecture markdown for relationship-only drift", async () => {
+  const root = await makeTempRepo("core-relationships");
+  await writeFile(
+    root,
+    "migrations/001.sql",
+    "CREATE TABLE Users (id int);\nCREATE TABLE Orders (id int, user_id int);"
+  );
+  await scanAndUpdate(root, ["migrations/001.sql"]);
+
+  await writeFile(
+    root,
+    "migrations/001.sql",
+    [
+      "CREATE TABLE Users (id int);",
+      "CREATE TABLE Orders (",
+      "  id int,",
+      "  user_id int REFERENCES Users(id)",
+      ");",
+    ].join("\n")
+  );
+  const reports = await scanAndUpdate(root, ["migrations/001.sql"]);
+
+  assert.equal(reports.length, 1);
+  assert.deepEqual((await loadModel(root)).relationships, [
+    {
+      from: "table:Orders",
+      to: "table:Users",
+      label: "FK",
+      sourceFile: "migrations/001.sql",
+    },
+  ]);
+  assert.match(await readFile(root, "ARCHITECTURE.md"), /table_Orders -->\|FK\| table_Users/);
+});
+
+test("scanAndUpdate extracts docker-compose depends_on relationships", async () => {
+  const root = await makeTempRepo("core-docker-depends");
+  await writeFile(
+    root,
+    "docker-compose.yml",
+    [
+      "services:",
+      "  api:",
+      "    build: .",
+      "    depends_on:",
+      "      - db",
+      "  db:",
+      "    image: postgres",
+    ].join("\n")
+  );
+
+  const reports = await scanAndUpdate(root, ["docker-compose.yml"]);
+
+  assert.equal(reports.length, 1);
+  const model = await loadModel(root);
+  assert.deepEqual(model.relationships, [
+    {
+      from: "service:api",
+      to: "service:db",
+      label: "depends_on",
+      sourceFile: "docker-compose.yml",
+    },
+  ]);
+  assert.match(
+    await readFile(root, "ARCHITECTURE.md"),
+    /service_api -->\|depends_on\| service_db/
+  );
+});
+
+test("scanAndUpdate infers service-to-endpoint relationships from build context", async () => {
+  const root = await makeTempRepo("core-service-endpoint");
+  await writeFile(
+    root,
+    "docker-compose.yml",
+    [
+      "services:",
+      "  api:",
+      "    build: ./backend",
+      "  db:",
+      "    image: postgres",
+    ].join("\n")
+  );
+  await writeFile(
+    root,
+    "backend/routes/orders.ts",
+    "router.get('/orders', list);"
+  );
+
+  await scanAndUpdate(root, [
+    "docker-compose.yml",
+    "backend/routes/orders.ts",
+  ]);
+
+  const model = await loadModel(root);
+  const exposes = model.relationships.filter((r) => r.label === "exposes");
+  assert.deepEqual(exposes, [
+    {
+      from: "service:api",
+      to: "endpoint:GET /orders",
+      label: "exposes",
+      sourceFile: "docker-compose.yml",
+    },
+  ]);
+});

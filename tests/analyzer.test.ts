@@ -245,6 +245,112 @@ test("extracts no depends_on relationships from non-docker-compose infra files",
   assert.deepEqual(extraction.relationships, []);
 });
 
+test("extracts endpoint-to-table relationships from SQL keywords in API files", () => {
+  const extraction = extractArchitecture(
+    "src/routes/orders.ts",
+    "api",
+    [
+      "router.get('/orders', async (req, res) => {",
+      "  const rows = await db.query('SELECT * FROM Orders WHERE active = true');",
+      "  const users = await db.query('SELECT id FROM Users JOIN Orders ON Users.id = Orders.user_id');",
+      "  res.json(rows);",
+      "});",
+    ].join("\n")
+  );
+
+  assert.deepEqual(
+    extraction.relationships.map((r) => `${r.from} -${r.label}-> ${r.to}`),
+    [
+      "endpoint:GET /orders -queries-> table:Orders",
+      "endpoint:GET /orders -queries-> table:Users",
+    ]
+  );
+});
+
+test("extracts endpoint-to-table relationships from Prisma ORM calls", () => {
+  const extraction = extractArchitecture(
+    "src/routes/users.ts",
+    "api",
+    [
+      "app.get('/users', async (req, res) => {",
+      "  const users = await prisma.user.findMany();",
+      "  res.json(users);",
+      "});",
+      "app.post('/users', async (req, res) => {",
+      "  const user = await prisma.user.create({ data: req.body });",
+      "  await prisma.auditLog.create({ data: { action: 'create' } });",
+      "  res.json(user);",
+      "});",
+    ].join("\n")
+  );
+
+  const rels = extraction.relationships.map((r) => `${r.from} -${r.label}-> ${r.to}`).sort();
+  assert.ok(rels.includes("endpoint:GET /users -queries-> table:User"));
+  assert.ok(rels.includes("endpoint:POST /users -queries-> table:User"));
+  assert.ok(rels.includes("endpoint:POST /users -queries-> table:AuditLog"));
+});
+
+test("extracts endpoint-to-table relationships from class-method ORM calls", () => {
+  const extraction = extractArchitecture(
+    "api/orders.py",
+    "api",
+    [
+      "@app.get('/orders')",
+      "def list_orders():",
+      "    return Order.objects.all()",
+    ].join("\n")
+  );
+
+  assert.deepEqual(
+    extraction.relationships.map((r) => `${r.from} -${r.label}-> ${r.to}`),
+    ["endpoint:GET /orders -queries-> table:Order"]
+  );
+});
+
+test("extracts endpoint-to-queue relationships from publish/subscribe calls", () => {
+  const extraction = extractArchitecture(
+    "src/routes/orders.ts",
+    "api",
+    [
+      "router.post('/orders', async (req, res) => {",
+      "  const order = await db.query('INSERT INTO Orders VALUES (1)');",
+      "  await queue.publish('order.created', order);",
+      "  res.json(order);",
+      "});",
+    ].join("\n")
+  );
+
+  const rels = extraction.relationships.map((r) => `${r.from} -${r.label}-> ${r.to}`);
+  assert.ok(rels.includes("endpoint:POST /orders -queries-> table:Orders"));
+  assert.ok(rels.includes("endpoint:POST /orders -publishes-> queue:order.created"));
+});
+
+test("does not create false endpoint-to-table relationships from import statements", () => {
+  const extraction = extractArchitecture(
+    "src/routes/orders.ts",
+    "api",
+    [
+      "import { Order } from '../models/order';",
+      "import express from 'express';",
+      "router.get('/orders', async (req, res) => {",
+      "  res.json([]);",
+      "});",
+    ].join("\n")
+  );
+
+  assert.deepEqual(extraction.relationships, []);
+});
+
+test("stores build context in docker-compose service detail", () => {
+  const compose = extractComponents(
+    "docker-compose.yml",
+    "infra",
+    "services:\n  api:\n    build: ./backend\n  db:\n    image: postgres\nvolumes:\n  data:"
+  );
+  assert.equal(compose.find((c) => c.id === "service:api")?.detail, "build: ./backend");
+  assert.equal(compose.find((c) => c.id === "service:db")?.detail, "image: postgres");
+});
+
 test("extracts EF Core simple navigation relationships only when both tables exist", () => {
   const extraction = extractArchitecture(
     "Data/Entities.cs",
