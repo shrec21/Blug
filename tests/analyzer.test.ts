@@ -35,6 +35,57 @@ test("extracts SQL, Prisma, and EF schema components", () => {
   assert.equal(ef[0]?.detail, "EF Core DbSet");
 });
 
+test("extracts SQL tables with IF NOT EXISTS and foreign keys from TypeScript schema files", () => {
+  const extraction = extractArchitecture(
+    "src/data/schema.ts",
+    "schema",
+    [
+      "db.exec(`",
+      "  CREATE TABLE IF NOT EXISTS users (",
+      "    id INTEGER PRIMARY KEY,",
+      "    name TEXT",
+      "  );",
+      "  CREATE TABLE IF NOT EXISTS orders (",
+      "    id INTEGER PRIMARY KEY,",
+      "    user_id INTEGER REFERENCES users(id),",
+      "    total DECIMAL",
+      "  );",
+      "`);",
+    ].join("\n")
+  );
+
+  assert.deepEqual(
+    stripVolatileComponentFields(extraction.components),
+    [
+      {
+        id: "table:users",
+        kind: "table",
+        name: "users",
+        sourceFile: "src/data/schema.ts",
+        detail: "CREATE TABLE",
+        lastChanged: "<timestamp>",
+      },
+      {
+        id: "table:orders",
+        kind: "table",
+        name: "orders",
+        sourceFile: "src/data/schema.ts",
+        detail: "CREATE TABLE",
+        lastChanged: "<timestamp>",
+      },
+    ]
+  );
+
+  assert.deepEqual(extraction.relationships, [
+    {
+      from: "table:orders",
+      to: "table:users",
+      label: "FK",
+      sourceFile: "src/data/schema.ts",
+    },
+  ]);
+});
+
 test("extracts common API route declarations", () => {
   const js = extractComponents(
     "src/routes/orders.ts",
