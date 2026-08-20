@@ -18,7 +18,8 @@ const RULES: Array<{ category: ArchCategory; test: RegExp }> = [
   // Schema / DB
   { category: "schema", test: /(^|\/)migrations?\//i },
   { category: "schema", test: /\.sql$/i },
-  { category: "schema", test: /schema\.(prisma|graphql)$/i },
+  { category: "schema", test: /schema\.(prisma|graphql|ts|js)$/i },
+  { category: "schema", test: /(^|\/)queries\.(ts|js)$/i },
   { category: "schema", test: /(^|\/)models?\/.*\.(py|ts|js|cs|java|rb)$/i },
   { category: "schema", test: /\.edmx$/i }, // EF Core / ASP.NET
   { category: "schema", test: /dbcontext.*\.cs$/i },

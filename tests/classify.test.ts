@@ -41,6 +41,25 @@ test("classifies README architecture-relevant file families", () => {
   });
 });
 
+test("classifies schema.ts and data/queries files as schema", () => {
+  assert.deepEqual(classify("src/data/schema.ts"), {
+    isArchRelevant: true,
+    category: "schema",
+  });
+  assert.deepEqual(classify("db/schema.js"), {
+    isArchRelevant: true,
+    category: "schema",
+  });
+  assert.deepEqual(classify("src/data/queries.ts"), {
+    isArchRelevant: true,
+    category: "schema",
+  });
+  assert.deepEqual(classify("server/db/queries.js"), {
+    isArchRelevant: true,
+    category: "schema",
+  });
+});
+
 test("ignores generated files, dependencies, tests, docs, and unrelated code", () => {
   for (const relPath of [
     "node_modules/pkg/package.json",
