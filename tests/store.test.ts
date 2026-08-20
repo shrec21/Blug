@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { emptyModel, type Component } from "../src/types.js";
-import { mergeComponents } from "../src/store.js";
+import { emptyModel, type Component, type Relationship } from "../src/types.js";
+import { mergeArchitecture, mergeComponents } from "../src/store.js";
 
 function component(id: string, detail = "v1", sourceFile = "schema.sql"): Component {
   return {
@@ -11,6 +11,19 @@ function component(id: string, detail = "v1", sourceFile = "schema.sql"): Compon
     sourceFile,
     detail,
     lastChanged: "2026-08-01T00:00:00.000Z",
+  };
+}
+
+function relationship(
+  from = "table:Orders",
+  to = "table:Users",
+  sourceFile = "schema.sql"
+): Relationship {
+  return {
+    from,
+    to,
+    label: "FK",
+    sourceFile,
   };
 }
 
@@ -59,4 +72,75 @@ test("mergeComponents updates source attribution without timestamp churn", () =>
   assert.equal(report.hasDrift, false);
   assert.equal(model.components["table:Users"]?.sourceFile, "new/schema.sql");
   assert.equal(model.components["table:Users"]?.lastChanged, "2026-08-01T00:00:00.000Z");
+});
+
+test("mergeArchitecture adds relationships and reports relationship drift", () => {
+  const model = emptyModel();
+
+  const report = mergeArchitecture(model, "schema.sql", {
+    components: [component("table:Users"), component("table:Orders")],
+    relationships: [relationship()],
+  });
+
+  assert.equal(report.hasDrift, true);
+  assert.deepEqual(report.addedRelationships, [relationship()]);
+  assert.deepEqual(model.relationships, [relationship()]);
+  assert.match(report.summary, /\+1 relationship/);
+});
+
+test("mergeArchitecture removes relationships owned by the changed source file", () => {
+  const model = emptyModel();
+  mergeArchitecture(model, "schema.sql", {
+    components: [component("table:Users"), component("table:Orders")],
+    relationships: [relationship()],
+  });
+
+  const report = mergeArchitecture(model, "schema.sql", {
+    components: [component("table:Users"), component("table:Orders")],
+    relationships: [],
+  });
+
+  assert.equal(report.hasDrift, true);
+  assert.deepEqual(report.removedRelationships, [relationship()]);
+  assert.deepEqual(model.relationships, []);
+  assert.match(report.summary, /-1 relationship/);
+});
+
+test("mergeArchitecture preserves relationships from other source files", () => {
+  const model = emptyModel();
+  const otherRelationship = relationship("table:Invoices", "table:Users", "other.sql");
+  mergeArchitecture(model, "schema.sql", {
+    components: [component("table:Users"), component("table:Orders")],
+    relationships: [relationship()],
+  });
+  mergeArchitecture(model, "other.sql", {
+    components: [component("table:Invoices", "v1", "other.sql")],
+    relationships: [otherRelationship],
+  });
+
+  mergeArchitecture(model, "schema.sql", {
+    components: [component("table:Users"), component("table:Orders")],
+    relationships: [],
+  });
+
+  assert.deepEqual(model.relationships, [otherRelationship]);
+});
+
+test("mergeArchitecture treats relationship-only changes as drift", () => {
+  const model = emptyModel();
+  mergeArchitecture(model, "schema.sql", {
+    components: [component("table:Users"), component("table:Orders")],
+    relationships: [],
+  });
+
+  const report = mergeArchitecture(model, "schema.sql", {
+    components: [component("table:Users"), component("table:Orders")],
+    relationships: [relationship()],
+  });
+
+  assert.equal(report.added.length, 0);
+  assert.equal(report.modified.length, 0);
+  assert.equal(report.removed.length, 0);
+  assert.equal(report.hasDrift, true);
+  assert.deepEqual(report.addedRelationships, [relationship()]);
 });

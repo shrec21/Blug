@@ -1,6 +1,13 @@
 import { promises as fs } from "fs";
 import path from "path";
-import { ArchitectureModel, Component, DriftReport, emptyModel } from "./types.js";
+import {
+  ArchitectureExtraction,
+  ArchitectureModel,
+  Component,
+  DriftReport,
+  Relationship,
+  emptyModel,
+} from "./types.js";
 
 const STATE_DIR = ".blug";
 const MODEL_FILE = "model.json";
@@ -33,9 +40,44 @@ export function mergeComponents(
   sourceFile: string,
   newComponents: Component[]
 ): DriftReport {
+  return mergeArchitecture(model, sourceFile, {
+    components: newComponents,
+    relationships: [],
+  });
+}
+
+function relationshipKey(relationship: Relationship): string {
+  return [
+    relationship.from,
+    relationship.to,
+    relationship.label ?? "",
+    relationship.sourceFile,
+  ].join("\0");
+}
+
+function dedupeRelationships(relationships: Relationship[]): Relationship[] {
+  const out: Relationship[] = [];
+  const seen = new Set<string>();
+  for (const relationship of relationships) {
+    const key = relationshipKey(relationship);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(relationship);
+  }
+  return out.sort((a, b) => relationshipKey(a).localeCompare(relationshipKey(b)));
+}
+
+// Merge newly-extracted architecture facts from one changed file into the
+// model, preserving facts owned by other files.
+export function mergeArchitecture(
+  model: ArchitectureModel,
+  sourceFile: string,
+  extraction: ArchitectureExtraction
+): DriftReport {
   const added: Component[] = [];
   const removed: Component[] = [];
   const modified: Component[] = [];
+  const newComponents = extraction.components;
 
   // Components previously attributed to this file, that are no longer found
   // in it, are candidates for removal (e.g. a table was dropped from a migration).
@@ -70,11 +112,35 @@ export function mergeComponents(
     }
   }
 
-  const hasDrift = added.length > 0 || removed.length > 0 || modified.length > 0;
+  const previousRelationshipsFromThisFile = model.relationships.filter(
+    (relationship) => relationship.sourceFile === sourceFile
+  );
+  const otherRelationships = model.relationships.filter(
+    (relationship) => relationship.sourceFile !== sourceFile
+  );
+  const newRelationships = dedupeRelationships(extraction.relationships);
+  const previousRelationshipKeys = new Set(previousRelationshipsFromThisFile.map(relationshipKey));
+  const newRelationshipKeys = new Set(newRelationships.map(relationshipKey));
+  const addedRelationships = newRelationships.filter(
+    (relationship) => !previousRelationshipKeys.has(relationshipKey(relationship))
+  );
+  const removedRelationships = previousRelationshipsFromThisFile.filter(
+    (relationship) => !newRelationshipKeys.has(relationshipKey(relationship))
+  );
+  model.relationships = dedupeRelationships([...otherRelationships, ...newRelationships]);
+
+  const hasDrift =
+    added.length > 0 ||
+    removed.length > 0 ||
+    modified.length > 0 ||
+    addedRelationships.length > 0 ||
+    removedRelationships.length > 0;
   const parts: string[] = [];
   if (added.length) parts.push(`+${added.length} added (${added.map((c) => c.name).join(", ")})`);
   if (removed.length) parts.push(`-${removed.length} removed (${removed.map((c) => c.name).join(", ")})`);
   if (modified.length) parts.push(`~${modified.length} modified (${modified.map((c) => c.name).join(", ")})`);
+  if (addedRelationships.length) parts.push(`+${addedRelationships.length} relationship`);
+  if (removedRelationships.length) parts.push(`-${removedRelationships.length} relationship`);
 
   return {
     sourceFile,
@@ -82,6 +148,8 @@ export function mergeComponents(
     added,
     removed,
     modified,
+    addedRelationships,
+    removedRelationships,
     summary: hasDrift ? parts.join("; ") : "no architectural drift",
   };
 }
