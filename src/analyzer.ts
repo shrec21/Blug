@@ -262,7 +262,7 @@ function extractSqlRelationships(relPath: string, content: string): Relationship
   const relationships: Relationship[] = [];
   const sqlIdentifier = String.raw`(?:(?:\[?[A-Za-z_][\w]*\]?|"[A-Za-z_][\w]*")\.)?(?:\[?[A-Za-z_][\w]*\]?|"[A-Za-z_][\w]*")`;
   const createTable = new RegExp(
-    String.raw`\bCREATE\s+TABLE\s+(${sqlIdentifier})\s*\(([\s\S]*?)\)\s*;`,
+    String.raw`\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(${sqlIdentifier})\s*\(([\s\S]*?)\)\s*;`,
     "gi"
   );
   const alterTable = new RegExp(
@@ -362,7 +362,7 @@ function extractSchema(relPath: string, content: string): Component[] {
   const out: Component[] = [];
 
   // SQL: CREATE TABLE / ALTER TABLE
-  const sqlTable = /\b(CREATE|ALTER)\s+TABLE\s+(?:\[?dbo\]?\.)?\[?([A-Za-z_][\w]*)\]?/gi;
+  const sqlTable = /\b(CREATE|ALTER)\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:\[?dbo\]?\.)?\[?([A-Za-z_][\w]*)\]?/gi;
   let m: RegExpExecArray | null;
   while ((m = sqlTable.exec(content))) {
     out.push({
