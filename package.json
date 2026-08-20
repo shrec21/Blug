@@ -11,17 +11,19 @@
     "typecheck": "tsc -p . --noEmit",
     "test:build": "tsc -p tsconfig.test.json",
     "test": "npm run build && npm run test:build && node --test .tmp/test-dist/tests/*.test.js",
+    "diagram:svg": "mmdc -p puppeteer-config.json -i ARCHITECTURE.md -o architecture.svg",
     "watch:daemon": "tsc -p . && node dist/watcher.js",
     "mcp": "tsc -p . && node dist/mcp-server.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
     "chokidar": "^3.6.0",
-    "node-notifier": "^10.0.1",
-    "@modelcontextprotocol/sdk": "^1.0.4"
+    "node-notifier": "^10.0.1"
   },
   "devDependencies": {
-    "typescript": "^5.5.4",
+    "@mermaid-js/mermaid-cli": "^11.16.0",
     "@types/node": "^22.5.0",
-    "@types/node-notifier": "^8.0.5"
+    "@types/node-notifier": "^8.0.5",
+    "typescript": "^5.5.4"
   }
 }
