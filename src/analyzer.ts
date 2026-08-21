@@ -53,6 +53,8 @@ function extractComponentsOnly(
       return extractDeps(relPath, content);
     case "messaging":
       return extractMessaging(relPath, content);
+    case "module":
+      return extractModule(relPath, content);
     default:
       return [];
   }
@@ -525,6 +527,20 @@ function extractDeps(relPath: string, content: string): Component[] {
     }
   }
   return out;
+}
+
+function extractModule(relPath: string, _content: string): Component[] {
+  const fileName = relPath.split(/[/\\]/).pop() ?? relPath;
+  const stem = fileName.replace(/\.(ts|js|tsx|jsx)$/i, "");
+  if (stem === "types" || stem === "index") return [];
+
+  return [{
+    id: `module:${stem}`,
+    kind: "module",
+    name: stem,
+    sourceFile: relPath,
+    lastChanged: nowIso(),
+  }];
 }
 
 function extractMessaging(relPath: string, content: string): Component[] {

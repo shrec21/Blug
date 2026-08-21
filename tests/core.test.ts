@@ -116,6 +116,52 @@ test("scanAndUpdate extracts docker-compose depends_on relationships", async () 
   );
 });
 
+test("scanAndUpdate infers endpoint-to-table relationships via import chain", async () => {
+  const root = await makeTempRepo("core-import-chain");
+  await writeFile(
+    root,
+    "src/data/schema.ts",
+    [
+      "db.exec(`",
+      "  CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT);",
+      "  CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id));",
+      "`);",
+    ].join("\n")
+  );
+  await writeFile(
+    root,
+    "src/data/queries.ts",
+    [
+      "import { db } from './schema';",
+      "export function getAllUsers() { return db.prepare('SELECT * FROM users').all(); }",
+      "export function insertOrder(uid: number) { const u = db.prepare('SELECT id FROM users WHERE id = ?').get(uid); db.prepare('INSERT INTO orders VALUES (?, ?)').run(1, uid); }",
+    ].join("\n")
+  );
+  await writeFile(
+    root,
+    "src/api/routes.ts",
+    [
+      "import { getAllUsers, insertOrder } from '../data/queries';",
+      "app.get('/users', async (req, res) => { res.json(getAllUsers()); });",
+      "app.post('/orders', async (req, res) => { insertOrder(1); res.json({ ok: true }); });",
+    ].join("\n")
+  );
+
+  await scanAndUpdate(root, [
+    "src/data/schema.ts",
+    "src/data/queries.ts",
+    "src/api/routes.ts",
+  ]);
+
+  const model = await loadModel(root);
+  const queries = model.relationships.filter((r) => r.label === "queries");
+  const queryDescs = queries.map((r) => `${r.from} -> ${r.to}`).sort();
+
+  assert.ok(queryDescs.includes("endpoint:GET /users -> table:users"), "GET /users should query users table");
+  assert.ok(queryDescs.includes("endpoint:POST /orders -> table:orders"), "POST /orders should query orders table");
+  assert.ok(queryDescs.includes("endpoint:POST /orders -> table:users"), "POST /orders should query users table (via insertOrder)");
+});
+
 test("scanAndUpdate infers service-to-endpoint relationships from build context", async () => {
   const root = await makeTempRepo("core-service-endpoint");
   await writeFile(
@@ -150,4 +196,43 @@ test("scanAndUpdate infers service-to-endpoint relationships from build context"
       sourceFile: "docker-compose.yml",
     },
   ]);
+});
+
+test("scanAndUpdate infers endpoint-to-module relationships via import chain", async () => {
+  const root = await makeTempRepo("core-endpoint-module");
+  await writeFile(
+    root,
+    "src/engine/deadline-engine.ts",
+    "export function computeDeadlines() { return []; }"
+  );
+  await writeFile(
+    root,
+    "src/engine/alert-engine.ts",
+    "export function getAlerts() { return []; }"
+  );
+  await writeFile(
+    root,
+    "src/api/routes.ts",
+    [
+      "import { computeDeadlines } from '../engine/deadline-engine';",
+      "import { getAlerts } from '../engine/alert-engine';",
+      "app.get('/deadlines', async (req, res) => { res.json(computeDeadlines()); });",
+      "app.get('/alerts', async (req, res) => { res.json(getAlerts()); });",
+    ].join("\n")
+  );
+
+  await scanAndUpdate(root, [
+    "src/engine/deadline-engine.ts",
+    "src/engine/alert-engine.ts",
+    "src/api/routes.ts",
+  ]);
+
+  const model = await loadModel(root);
+  assert.equal(model.components["module:deadline-engine"]?.kind, "module");
+  assert.equal(model.components["module:alert-engine"]?.kind, "module");
+
+  const uses = model.relationships.filter((r) => r.label === "uses").map((r) => `${r.from} -> ${r.to}`).sort();
+  assert.ok(uses.includes("endpoint:GET /deadlines -> module:deadline-engine"), "GET /deadlines should use deadline-engine");
+  assert.ok(uses.includes("endpoint:GET /alerts -> module:alert-engine"), "GET /alerts should use alert-engine");
+  assert.ok(!uses.includes("endpoint:GET /deadlines -> module:alert-engine"), "GET /deadlines should NOT use alert-engine");
 });
