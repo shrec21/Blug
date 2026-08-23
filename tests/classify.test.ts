@@ -60,6 +60,42 @@ test("classifies schema.ts and data/queries files as schema", () => {
   });
 });
 
+test("classifies engine, watcher, mcp, and dispatcher files as module", () => {
+  assert.deepEqual(classify("src/engine/deadline-engine.ts"), {
+    isArchRelevant: true,
+    category: "module",
+  });
+  assert.deepEqual(classify("src/engine/alert-engine.js"), {
+    isArchRelevant: true,
+    category: "module",
+  });
+  assert.deepEqual(classify("src/watcher/scheduler.ts"), {
+    isArchRelevant: true,
+    category: "module",
+  });
+  assert.deepEqual(classify("src/mcp/server.ts"), {
+    isArchRelevant: true,
+    category: "module",
+  });
+  assert.deepEqual(classify("src/data/outbox-dispatcher.ts"), {
+    isArchRelevant: true,
+    category: "module",
+  });
+  assert.deepEqual(classify("lib/unemployment-tracker.js"), {
+    isArchRelevant: true,
+    category: "module",
+  });
+  // types.ts and index.ts in module dirs are excluded
+  assert.deepEqual(classify("src/engine/types.ts"), {
+    isArchRelevant: false,
+  });
+  // watcher/queries.ts should be schema, not module (schema rule wins)
+  assert.deepEqual(classify("src/watcher/queries.ts"), {
+    isArchRelevant: true,
+    category: "schema",
+  });
+});
+
 test("ignores generated files, dependencies, tests, docs, and unrelated code", () => {
   for (const relPath of [
     "node_modules/pkg/package.json",

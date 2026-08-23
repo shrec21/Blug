@@ -7,7 +7,8 @@ export type ArchCategory =
   | "api"         // route definitions, controllers, OpenAPI/GraphQL specs
   | "infra"       // docker-compose, k8s manifests, Terraform, CI workflows
   | "deps"        // package.json, requirements.txt, go.mod, Gemfile, csproj
-  | "messaging";  // queue/topic config, event bus definitions
+  | "messaging"   // queue/topic config, event bus definitions
+  | "module";     // business-logic units (engines, trackers, dispatchers, agents)
 
 export interface Classification {
   isArchRelevant: boolean;
@@ -46,6 +47,10 @@ const RULES: Array<{ category: ArchCategory; test: RegExp }> = [
 
   // Messaging
   { category: "messaging", test: /(^|\/)(events?|topics?|queues?)\/.*\.(ts|js|py|cs|java)$/i },
+
+  // Module / business logic
+  { category: "module", test: /[-\w]+-(?:engine|tracker|clock|dispatcher)\.(ts|js|tsx|jsx)$/i },
+  { category: "module", test: /(^|\/)(?:engine|watcher|mcp)\/(?!types\.|index\.)[^/]+\.(ts|js|tsx|jsx)$/i },
 ];
 
 const IGNORE = [
