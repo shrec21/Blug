@@ -56,7 +56,7 @@ test("preview server returns Mermaid JSON from the saved model", async () => {
     const payload = await readJson<{ mermaid: string; updatedAt: string }>(`${server.url}/diagram`);
 
     assert.equal(payload.updatedAt, "2026-08-04T00:00:00.000Z");
-    assert.match(payload.mermaid, /flowchart LR/);
+    assert.match(payload.mermaid, /flowchart TB/);
     assert.match(payload.mermaid, /Users/);
   } finally {
     await server.close();
@@ -70,7 +70,7 @@ test("preview server returns an empty diagram with an error when model JSON is i
   try {
     const payload = await readJson<{ mermaid: string; error?: string }>(`${server.url}/diagram`);
 
-    assert.match(payload.mermaid, /flowchart LR/);
+    assert.match(payload.mermaid, /flowchart TB/);
     assert.match(payload.error ?? "", /Expected property name|JSON/);
   } finally {
     await server.close();
