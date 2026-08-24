@@ -4,17 +4,19 @@ const GROUP_LABEL: Record<ComponentKind, string> = {
   table: "Database",
   endpoint: "API",
   service: "Services",
+  module: "Modules",
   dependency: "Dependencies",
   queue: "Messaging",
   job: "Jobs",
 };
 
-// Layered order: deployment → interface → async → data → background → external
-const KIND_ORDER: ComponentKind[] = ["service", "endpoint", "queue", "table", "job", "dependency"];
+// Layered order: deployment → interface → logic → async → data → background → external
+const KIND_ORDER: ComponentKind[] = ["service", "endpoint", "module", "queue", "table", "job", "dependency"];
 
 const SUBGRAPH_STYLE: Record<ComponentKind, string> = {
   service: "fill:#e8f5e9,stroke:#388e3c",
   endpoint: "fill:#e3f2fd,stroke:#1976d2",
+  module: "fill:#fff9c4,stroke:#f9a825",
   table: "fill:#fce4ec,stroke:#c62828",
   queue: "fill:#fff3e0,stroke:#e65100",
   dependency: "fill:#f3e5f5,stroke:#7b1fa2",
