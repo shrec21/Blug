@@ -10,6 +10,12 @@ import path from "path";
 const root = process.cwd();
 const [, , cmd, ...rest] = process.argv;
 
+function parseFocus(args: string[]): string | undefined {
+  const index = args.indexOf("--focus");
+  if (index === -1) return undefined;
+  return args[index + 1];
+}
+
 async function main() {
   if (cmd === "check") {
     const paths = rest.length > 0 ? rest.map((p) => path.relative(root, path.resolve(p))) : await walkRepo(root);
@@ -25,7 +31,7 @@ async function main() {
 
   if (cmd === "diagram") {
     const model = await loadModel(root);
-    console.log(renderMermaid(model));
+    console.log(renderMermaid(model, { focus: parseFocus(rest) }));
     return;
   }
 
@@ -45,6 +51,8 @@ async function main() {
   blug init            seed baseline model from full repo scan
   blug check [files]   check given files (or whole repo) for architecture drift
   blug diagram         print current Mermaid diagram to stdout
+  blug diagram --focus <name-or-id>
+                       print a component and its direct relationships
   blug watch           watch continuously for architecture drift
   blug watch --preview watch and open a live architecture preview
 

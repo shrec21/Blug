@@ -40,3 +40,56 @@ test("cli help mentions watcher preview mode", async () => {
 
   assert.match(stdout, /blug watch --preview/);
 });
+
+test("cli diagram can focus on one component neighborhood", async () => {
+  const root = await makeTempRepo("cli-diagram-focus");
+  await writeFile(
+    root,
+    ".blug/model.json",
+    JSON.stringify({
+      version: 1,
+      updatedAt: "2026-08-01T00:00:00.000Z",
+      components: {
+        "endpoint:GET /users": {
+          id: "endpoint:GET /users",
+          kind: "endpoint",
+          name: "GET /users",
+          sourceFile: "routes/users.ts",
+          lastChanged: "2026-08-01T00:00:00.000Z",
+        },
+        "table:Users": {
+          id: "table:Users",
+          kind: "table",
+          name: "Users",
+          sourceFile: "schema.sql",
+          lastChanged: "2026-08-01T00:00:00.000Z",
+        },
+        "table:Orders": {
+          id: "table:Orders",
+          kind: "table",
+          name: "Orders",
+          sourceFile: "schema.sql",
+          lastChanged: "2026-08-01T00:00:00.000Z",
+        },
+      },
+      relationships: [
+        {
+          from: "endpoint:GET /users",
+          to: "table:Users",
+          label: "queries",
+          sourceFile: "routes/users.ts",
+        },
+      ],
+    })
+  );
+
+  const { stdout } = await execFileAsync("node", [cliPath, "diagram", "--focus", "users"], {
+    cwd: root,
+    env: cliEnv,
+  });
+
+  assert.match(stdout, /GET \/users/);
+  assert.match(stdout, /Users/);
+  assert.match(stdout, /queries/);
+  assert.doesNotMatch(stdout, /Orders/);
+});
