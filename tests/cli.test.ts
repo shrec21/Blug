@@ -64,6 +64,13 @@ test("cli diagram can focus on one component neighborhood", async () => {
           sourceFile: "schema.sql",
           lastChanged: "2026-08-01T00:00:00.000Z",
         },
+        "queue:user-events": {
+          id: "queue:user-events",
+          kind: "queue",
+          name: "user-events",
+          sourceFile: "queues.ts",
+          lastChanged: "2026-08-01T00:00:00.000Z",
+        },
         "table:Orders": {
           id: "table:Orders",
           kind: "table",
@@ -79,17 +86,25 @@ test("cli diagram can focus on one component neighborhood", async () => {
           label: "queries",
           sourceFile: "routes/users.ts",
         },
+        {
+          from: "table:Users",
+          to: "queue:user-events",
+          label: "publishes",
+          sourceFile: "schema.sql",
+        },
       ],
     })
   );
 
-  const { stdout } = await execFileAsync("node", [cliPath, "diagram", "--focus", "users"], {
+  const { stdout } = await execFileAsync("node", [cliPath, "diagram", "--focus", "GET /users", "--depth", "2"], {
     cwd: root,
     env: cliEnv,
   });
 
   assert.match(stdout, /GET \/users/);
   assert.match(stdout, /Users/);
+  assert.match(stdout, /user-events/);
   assert.match(stdout, /queries/);
+  assert.match(stdout, /publishes/);
   assert.doesNotMatch(stdout, /Orders/);
 });

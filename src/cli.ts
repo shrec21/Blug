@@ -16,6 +16,14 @@ function parseFocus(args: string[]): string | undefined {
   return args[index + 1];
 }
 
+function parseDepth(args: string[]): number | undefined {
+  const index = args.indexOf("--depth");
+  if (index === -1) return undefined;
+  const value = args[index + 1];
+  if (!/^\d+$/.test(value ?? "")) return undefined;
+  return Number(value);
+}
+
 async function main() {
   if (cmd === "check") {
     const paths = rest.length > 0 ? rest.map((p) => path.relative(root, path.resolve(p))) : await walkRepo(root);
@@ -31,7 +39,7 @@ async function main() {
 
   if (cmd === "diagram") {
     const model = await loadModel(root);
-    console.log(renderMermaid(model, { focus: parseFocus(rest) }));
+    console.log(renderMermaid(model, { focus: parseFocus(rest), depth: parseDepth(rest) }));
     return;
   }
 
@@ -53,6 +61,8 @@ async function main() {
   blug diagram         print current Mermaid diagram to stdout
   blug diagram --focus <name-or-id>
                        print a component and its direct relationships
+  blug diagram --focus <name-or-id> --depth <n>
+                       expand focused diagram by graph distance
   blug watch           watch continuously for architecture drift
   blug watch --preview watch and open a live architecture preview
 
