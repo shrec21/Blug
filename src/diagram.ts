@@ -1,5 +1,10 @@
 import { type ArchitectureModel, type Component, type ComponentKind } from "./types.js";
 
+export interface DiagramRenderOptions {
+  focus?: string;
+  depth?: number;
+}
+
 const GROUP_LABEL: Record<ComponentKind, string> = {
   table: "Database",
   endpoint: "API",
@@ -35,9 +40,60 @@ function escapeLabel(label: string): string {
     .replace(/\|/g, "/");
 }
 
-export function renderMermaid(model: ArchitectureModel): string {
+function matchesFocus(component: Component, focus: string): boolean {
+  const needle = focus.toLowerCase();
+  return component.id.toLowerCase().includes(needle) || component.name.toLowerCase().includes(needle);
+}
+
+function focusDepth(options: DiagramRenderOptions): number {
+  if (options.depth === undefined) return 1;
+  if (!Number.isInteger(options.depth) || options.depth < 0) return 1;
+  return options.depth;
+}
+
+function focusModel(model: ArchitectureModel, focus: string, depth: number): ArchitectureModel {
+  const focusedIds = new Set(
+    Object.values(model.components)
+      .filter((component) => matchesFocus(component, focus))
+      .map((component) => component.id)
+  );
+  if (focusedIds.size === 0) {
+    return { ...model, components: {}, relationships: [] };
+  }
+
+  const includedIds = new Set(focusedIds);
+  let frontier = [...focusedIds];
+  for (let level = 0; level < depth; level += 1) {
+    const nextFrontier: string[] = [];
+    for (const relationship of model.relationships) {
+      for (const [from, to] of [
+        [relationship.from, relationship.to],
+        [relationship.to, relationship.from],
+      ]) {
+        if (frontier.includes(from) && !includedIds.has(to)) {
+          includedIds.add(to);
+          nextFrontier.push(to);
+        }
+      }
+    }
+    frontier = nextFrontier;
+    if (frontier.length === 0) break;
+  }
+
+  const components = Object.fromEntries(
+    Object.entries(model.components).filter(([id]) => includedIds.has(id))
+  );
+  const relationships = model.relationships.filter(
+    (relationship) => components[relationship.from] && components[relationship.to]
+  );
+
+  return { ...model, components, relationships };
+}
+
+export function renderMermaid(model: ArchitectureModel, options: DiagramRenderOptions = {}): string {
+  const renderedModel = options.focus ? focusModel(model, options.focus, focusDepth(options)) : model;
   const byKind = new Map<ComponentKind, Component[]>();
-  for (const c of Object.values(model.components)) {
+  for (const c of Object.values(renderedModel.components)) {
     if (!byKind.has(c.kind)) byKind.set(c.kind, []);
     byKind.get(c.kind)!.push(c);
   }
@@ -57,8 +113,8 @@ export function renderMermaid(model: ArchitectureModel): string {
   }
 
   // Filter out relationships where either side doesn't exist as a component
-  const validRelationships = model.relationships.filter(
-    (rel) => model.components[rel.from] && model.components[rel.to]
+  const validRelationships = renderedModel.relationships.filter(
+    (rel) => renderedModel.components[rel.from] && renderedModel.components[rel.to]
   );
 
   const relationships = [...validRelationships].sort((a, b) => {
