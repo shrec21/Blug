@@ -5,6 +5,7 @@ export type ComponentKind =
   | "table"        // DB table / schema entity
   | "endpoint"      // API route / RPC method
   | "service"       // deployable unit (docker-compose service, k8s deployment, microservice folder)
+  | "module"        // business-logic unit (engine, tracker, dispatcher, agent)
   | "dependency"    // external package that changed (new/removed top-level dep)
   | "queue"         // message queue / topic
   | "job";          // scheduled/background job
@@ -22,6 +23,12 @@ export interface Relationship {
   from: string;              // Component id
   to: string;                // Component id
   label?: string;            // e.g. "FK", "calls", "publishes"
+  sourceFile: string;        // relative path that inferred this edge
+}
+
+export interface ArchitectureExtraction {
+  components: Component[];
+  relationships: Relationship[];
 }
 
 export interface ArchitectureModel {
@@ -43,6 +50,8 @@ export interface DriftReport {
   added: Component[];
   removed: Component[];
   modified: Component[];
+  addedRelationships: Relationship[];
+  removedRelationships: Relationship[];
   summary: string;
 }
 
