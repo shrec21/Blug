@@ -11,6 +11,8 @@ function driftReport(sourceFile: string): DriftReport {
     added: [],
     removed: [],
     modified: [],
+    addedRelationships: [],
+    removedRelationships: [],
     summary: "changed"
   };
 }
