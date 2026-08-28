@@ -108,3 +108,79 @@ test("cli diagram can focus on one component neighborhood", async () => {
   assert.match(stdout, /publishes/);
   assert.doesNotMatch(stdout, /Orders/);
 });
+
+test("cli diagram can hide noisy component kinds", async () => {
+  const root = await makeTempRepo("cli-diagram-hide");
+  await writeFile(
+    root,
+    ".blug/model.json",
+    JSON.stringify({
+      version: 1,
+      updatedAt: "2026-08-01T00:00:00.000Z",
+      components: {
+        "endpoint:GET /users": {
+          id: "endpoint:GET /users",
+          kind: "endpoint",
+          name: "GET /users",
+          sourceFile: "routes/users.ts",
+          lastChanged: "2026-08-01T00:00:00.000Z",
+        },
+        "table:Users": {
+          id: "table:Users",
+          kind: "table",
+          name: "Users",
+          sourceFile: "schema.sql",
+          lastChanged: "2026-08-01T00:00:00.000Z",
+        },
+        "queue:user-events": {
+          id: "queue:user-events",
+          kind: "queue",
+          name: "user-events",
+          sourceFile: "queues.ts",
+          lastChanged: "2026-08-01T00:00:00.000Z",
+        },
+        "dependency:analytics": {
+          id: "dependency:analytics",
+          kind: "dependency",
+          name: "analytics",
+          sourceFile: "package.json",
+          lastChanged: "2026-08-01T00:00:00.000Z",
+        },
+      },
+      relationships: [
+        {
+          from: "endpoint:GET /users",
+          to: "table:Users",
+          label: "queries",
+          sourceFile: "routes/users.ts",
+        },
+        {
+          from: "table:Users",
+          to: "queue:user-events",
+          label: "publishes",
+          sourceFile: "schema.sql",
+        },
+        {
+          from: "queue:user-events",
+          to: "dependency:analytics",
+          label: "handled by",
+          sourceFile: "queues.ts",
+        },
+      ],
+    })
+  );
+
+  const { stdout } = await execFileAsync(
+    "node",
+    [cliPath, "diagram", "--focus", "GET /users", "--depth", "3", "--hide", "dependency,queue"],
+    { cwd: root, env: cliEnv }
+  );
+
+  assert.match(stdout, /GET \/users/);
+  assert.match(stdout, /Users/);
+  assert.match(stdout, /queries/);
+  assert.doesNotMatch(stdout, /user-events/);
+  assert.doesNotMatch(stdout, /analytics/);
+  assert.doesNotMatch(stdout, /publishes/);
+  assert.doesNotMatch(stdout, /handled by/);
+});

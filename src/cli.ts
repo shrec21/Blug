@@ -5,10 +5,12 @@ import { loadModel } from "./store.js";
 import { renderMermaid } from "./diagram.js";
 import { alertDrift } from "./notify.js";
 import { parseWatcherArgs, runWatcher } from "./watcher.js";
+import { type ComponentKind } from "./types.js";
 import path from "path";
 
 const root = process.cwd();
 const [, , cmd, ...rest] = process.argv;
+const COMPONENT_KINDS: ComponentKind[] = ["table", "endpoint", "service", "module", "dependency", "queue", "job"];
 
 function parseFocus(args: string[]): string | undefined {
   const index = args.indexOf("--focus");
@@ -22,6 +24,16 @@ function parseDepth(args: string[]): number | undefined {
   const value = args[index + 1];
   if (!/^\d+$/.test(value ?? "")) return undefined;
   return Number(value);
+}
+
+function parseHide(args: string[]): ComponentKind[] {
+  const index = args.indexOf("--hide");
+  if (index === -1) return [];
+  const value = args[index + 1] ?? "";
+  return value
+    .split(",")
+    .map((kind) => kind.trim())
+    .filter((kind): kind is ComponentKind => COMPONENT_KINDS.includes(kind as ComponentKind));
 }
 
 async function main() {
@@ -39,7 +51,7 @@ async function main() {
 
   if (cmd === "diagram") {
     const model = await loadModel(root);
-    console.log(renderMermaid(model, { focus: parseFocus(rest), depth: parseDepth(rest) }));
+    console.log(renderMermaid(model, { focus: parseFocus(rest), depth: parseDepth(rest), hide: parseHide(rest) }));
     return;
   }
 
@@ -63,6 +75,8 @@ async function main() {
                        print a component and its direct relationships
   blug diagram --focus <name-or-id> --depth <n>
                        expand focused diagram by graph distance
+  blug diagram --hide <kind[,kind...]>
+                       omit selected component kinds and their relationships
   blug watch           watch continuously for architecture drift
   blug watch --preview watch and open a live architecture preview
 
