@@ -180,6 +180,17 @@ test("renderMermaid expands focused diagrams by graph depth", () => {
   assert.doesNotMatch(depthTwo, /handled by/);
 });
 
+test("renderMermaid hides selected component kinds and their relationships", () => {
+  const mermaid = renderMermaid(model, { hide: ["dependency"] });
+
+  assert.match(mermaid, /endpoint_GET__orders\["GET \/orders"\]/);
+  assert.match(mermaid, /table_Orders\["Orders"\]/);
+  assert.match(mermaid, /endpoint_GET__orders -->\|reads \\"latest\\"\| table_Orders/);
+  assert.doesNotMatch(mermaid, /dependency__scope_pkg/);
+  assert.doesNotMatch(mermaid, /owned by/);
+  assert.doesNotMatch(mermaid, /subgraph dependency/);
+});
+
 test("renderMarkdown includes deterministic summary and empty-state text", () => {
   assert.match(
     renderMarkdown(model),

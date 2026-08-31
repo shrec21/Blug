@@ -3,6 +3,7 @@ import { type ArchitectureModel, type Component, type ComponentKind } from "./ty
 export interface DiagramRenderOptions {
   focus?: string;
   depth?: number;
+  hide?: ComponentKind[];
 }
 
 const GROUP_LABEL: Record<ComponentKind, string> = {
@@ -90,8 +91,23 @@ function focusModel(model: ArchitectureModel, focus: string, depth: number): Arc
   return { ...model, components, relationships };
 }
 
+function hideModelKinds(model: ArchitectureModel, hiddenKinds: ComponentKind[]): ArchitectureModel {
+  if (hiddenKinds.length === 0) return model;
+
+  const hidden = new Set(hiddenKinds);
+  const components = Object.fromEntries(
+    Object.entries(model.components).filter(([, component]) => !hidden.has(component.kind))
+  );
+  const relationships = model.relationships.filter(
+    (relationship) => components[relationship.from] && components[relationship.to]
+  );
+
+  return { ...model, components, relationships };
+}
+
 export function renderMermaid(model: ArchitectureModel, options: DiagramRenderOptions = {}): string {
-  const renderedModel = options.focus ? focusModel(model, options.focus, focusDepth(options)) : model;
+  const focusedModel = options.focus ? focusModel(model, options.focus, focusDepth(options)) : model;
+  const renderedModel = hideModelKinds(focusedModel, options.hide ?? []);
   const byKind = new Map<ComponentKind, Component[]>();
   for (const c of Object.values(renderedModel.components)) {
     if (!byKind.has(c.kind)) byKind.set(c.kind, []);
